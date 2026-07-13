@@ -9,7 +9,7 @@ __pycache__/
 venv_ubam/
 
 .env
-
+data/processed/
 data/raw/*
 
 outputs/

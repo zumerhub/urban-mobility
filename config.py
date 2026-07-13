@@ -58,18 +58,35 @@ ROAD_NETWORK_IMAGE = FIGURE_DIR / "ikeja_road_network.png"
 # Reports
 # ------------------------------------------------------------------
 
-REPORT_DIR = OUTPUT_DIR / "reports"
+# REPORT_DIR = OUTPUT_DIR / "reports"
 
-REPORT_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
+# REPORT_DIR.mkdir(
+#     parents=True,
+#     exist_ok=True,
+# )
+
+# GRAPH_SUMMARY_JSON = REPORT_DIR / "graph_summary.json"
+
+# NODE_STATISTICS_CSV = REPORT_DIR / "node_statistics.csv"
+
+# EDGE_STATISTICS_CSV = REPORT_DIR / "edge_statistics.csv"
+
+# GRAPH_SUMMARY_CSV = REPORT_DIR / "graph_summary.csv"
+
+# CENTRALITY_STATISTICS_CSV = REPORT_DIR / "centrality_statistics.csv"
+
+REPORT_DIR = OUTPUT_DIR / "reports"
+REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 GRAPH_SUMMARY_JSON = REPORT_DIR / "graph_summary.json"
+
+GRAPH_SUMMARY_CSV = REPORT_DIR / "graph_summary.csv"
 
 NODE_STATISTICS_CSV = REPORT_DIR / "node_statistics.csv"
 
 EDGE_STATISTICS_CSV = REPORT_DIR / "edge_statistics.csv"
+
+CENTRALITY_STATISTICS_CSV = REPORT_DIR / "centrality_statistics.csv"
 
 # ------------------------------------------------------------------
 # Figures

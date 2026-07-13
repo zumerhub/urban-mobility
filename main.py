@@ -24,6 +24,8 @@ Future Pipeline
 from config import GRAPH_FILE
 from src.downloader import RoadNetworkDownloader
 from src.graph_processor import GraphProcessor
+from src.graph_analysis import GraphAnalyzer
+from src.traffic_features import TrafficFeatureGenerator
 
 
 def main():
@@ -41,8 +43,18 @@ def main():
 
     print("\nSTEP 2: PROCESS ROAD NETWORK\n")
     processor = GraphProcessor()
-
     processor.run()
+
+    print("\nSTEP 3: GRAPH ANALYSIS\n")
+    analyzer = GraphAnalyzer(
+        force_recompute=False
+    )
+    analyzer.run()
+
+    print("\nSTEP 4: TRAFFIC FEATURE GENERATION\n")
+    traffic = TrafficFeatureGenerator()
+    traffic.run()
+
 
     print("\nPipeline completed successfully.")
 
