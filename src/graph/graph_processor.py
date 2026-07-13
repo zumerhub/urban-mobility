@@ -24,7 +24,11 @@ from pathlib import Path
 
 import geopandas as gpd
 import osmnx as ox
-
+from src.types import (
+    RoadGraph,
+    NodeGeoDataFrame,
+    EdgeGeoDataFrame,
+)
 from config import (
     GRAPH_FILE,
     NODE_FILE,
@@ -49,7 +53,8 @@ class GraphProcessor:
     # Load Graph
     # ------------------------------------------------------------------
 
-    def load_graph(self):
+    # def load_graph(self):
+    def load_graph(self) -> RoadGraph:
 
         print("=" * 70)
         print("LOADING GRAPH")
@@ -65,7 +70,7 @@ class GraphProcessor:
     # Simplify Graph
     # ------------------------------------------------------------------
 
-    def simplify_graph(self, graph):
+    def simplify_graph(self, graph: RoadGraph) -> RoadGraph:
 
         print("=" * 70)
         print("SIMPLIFYING GRAPH")
@@ -81,7 +86,7 @@ class GraphProcessor:
     # Project Graph
     # ------------------------------------------------------------------
 
-    def project_graph(self, graph):
+    def project_graph(self, graph: RoadGraph) -> RoadGraph:
 
         print("=" * 70)
         print("PROJECTING GRAPH")
@@ -97,7 +102,8 @@ class GraphProcessor:
     # Convert Graph
     # ------------------------------------------------------------------
 
-    def convert_to_geodataframes(self, graph):
+    def convert_to_geodataframes(self, graph: RoadGraph
+                                 ) -> tuple[NodeGeoDataFrame, EdgeGeoDataFrame]:
 
         print("=" * 70)
         print("CONVERTING GRAPH")

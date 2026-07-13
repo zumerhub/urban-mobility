@@ -42,9 +42,15 @@ Project:
 
 from pathlib import Path
 
-import pandas as pd
+# import pandas as pd
 import osmnx as ox
+from typing import Any
+import geopandas as gpd
 
+from src.types import (
+    RoadGraph,
+    DataFrame,
+)
 
 from config import (
     GRAPH_FILE,
@@ -65,22 +71,25 @@ class TrafficFeatureGenerator:
 
         self.graph_file = Path(graph_file)
 
-        self.graph = None
+        self.graph: RoadGraph | None  = None
 
-        self.edge_features = None
+        self.edge_features: DataFrame | None  = None
 
 
     # ------------------------------------------------------------------
     # Load Graph
     # ------------------------------------------------------------------
 
-    def load_graph(self):
+    def load_graph(self) -> RoadGraph:
 
         print("=" * 70)
         print("LOADING ROAD NETWORK")
         print("=" * 70)
 
-
+        if not self.graph_file.exists():
+            raise FileNotFoundError(
+                 f"Graph not found:\n{self.graph_file}"
+            )
         self.graph = ox.load_graphml(
             self.graph_file
         )
@@ -97,14 +106,20 @@ class TrafficFeatureGenerator:
     # Convert edges to dataframe
     # ------------------------------------------------------------------
 
-    def extract_edges(self):
+    def extract_edges(self) -> DataFrame:
 
         print("=" * 70)
         print("EXTRACTING ROAD SEGMENTS")
         print("=" * 70)
 
+        if self.graph is None:
+            raise RuntimeError(
+                "Load the graph first"
+            )
+            
+        graph = self.graph
 
-        nodes, edges = ox.graph_to_gdfs(
+        _, edges = ox.graph_to_gdfs(
             self.graph
         )
 
@@ -130,7 +145,7 @@ class TrafficFeatureGenerator:
     # Estimate speed
     # ------------------------------------------------------------------
 
-    def add_speed_feature(self):
+    def add_speed_feature(self) -> None:
 
         print("=" * 70)
         print("ADDING SPEED ESTIMATION")
@@ -147,7 +162,9 @@ class TrafficFeatureGenerator:
         """
 
 
-        def estimate_speed(row):
+        def estimate_speed(
+                row: Any,
+            ) -> int:
 
             highway = row.get(
                 "highway",
@@ -184,7 +201,11 @@ class TrafficFeatureGenerator:
                 30
             )
 
-
+        if self.edge_features is None:
+            raise RuntimeError(
+                "Run extract_edges() first."
+            )
+        
         self.edge_features["speed_kmh"] = (
             self.edge_features.apply(
                 estimate_speed,
@@ -201,7 +222,7 @@ class TrafficFeatureGenerator:
     # Calculate free flow travel time
     # ------------------------------------------------------------------
 
-    def calculate_free_flow_time(self):
+    def calculate_free_flow_time(self) -> None:
 
         print("=" * 70)
         print("CALCULATING FREE FLOW TRAVEL TIME")

@@ -22,10 +22,14 @@ Future Pipeline
 ===========================================================================
 """
 from config import GRAPH_FILE
-from src.downloader import RoadNetworkDownloader
-from src.graph_processor import GraphProcessor
+from src.graph.downloader import RoadNetworkDownloader
+from src.graph.graph_processor import GraphProcessor
 from src.graph_analysis import GraphAnalyzer
-from src.traffic_features import TrafficFeatureGenerator
+# from src.traffic_features import TrafficFeatureGenerator
+from src.graph.downloader import RoadNetworkDownloader
+# from src.graph.processor import GraphProcessor
+# from src.graph.analysis import GraphAnalyzer
+from src.graph.traffic_features import TrafficFeatureEngineer
 
 
 def main():

@@ -26,10 +26,11 @@ It does NOT:
 Those tasks belong to other modules.
 ===========================================================================
 """
-
+from __future__ import annotations
+# from typing import Hashable
 from pathlib import Path
-
-
+# import networkx as nx
+from src.types import RoadGraph
 import osmnx as ox
 
 from config import PLACE_NAME, GRAPH_FILE
@@ -52,7 +53,8 @@ class RoadNetworkDownloader:
     # Download graph
     # ------------------------------------------------------------------
 
-    def download(self):
+    def download(self) -> RoadGraph:
+    # def download(self) -> nx.MultiDiGraph[Hashable]:
         """
         Download the drivable road network.
 
@@ -83,7 +85,32 @@ class RoadNetworkDownloader:
     # Save graph
     # ------------------------------------------------------------------
 
-    def save(self, graph):
+    # def save(self, graph):
+    #     """
+    #     Save graph as GraphML.
+    #     """
+
+    #     print("=" * 70)
+    #     print("SAVING GRAPH")
+    #     print("=" * 70)
+
+    #     self.output_file.parent.mkdir(
+    #         parents=True,
+    #         exist_ok=True,
+    #     )
+
+    #     ox.save_graphml(
+    #         graph,
+    #         filepath=self.output_file,
+    #     )
+
+    #     print(f"Saved to:\n{self.output_file}")
+    #     print()
+
+    def save(
+        self,
+        graph: RoadGraph,
+    ) -> None:
         """
         Save graph as GraphML.
         """
@@ -102,14 +129,12 @@ class RoadNetworkDownloader:
             filepath=self.output_file,
         )
 
-        print(f"Saved to:\n{self.output_file}")
-        print()
-
+        print(f"Saved to:\n{self.output_file}\n")
     # ------------------------------------------------------------------
     # Execute complete download pipeline
     # ------------------------------------------------------------------
 
-    def run(self):
+    def run(self) -> RoadGraph:
         """
         Download and save the road network.
 

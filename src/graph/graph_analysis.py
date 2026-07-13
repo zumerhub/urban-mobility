@@ -30,15 +30,20 @@ Responsibilities
 """
 
 from __future__ import annotations
-
+# from typing import Hashable
 import json
 from pathlib import Path
 from typing import Dict, Any
+from src.types import (
+    RoadGraph,
+    DataFrame,
+)
+
 
 import networkx as nx
 import osmnx as ox
 import pandas as pd
-import json 
+ 
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
@@ -50,13 +55,13 @@ from config import (
     EDGE_STATISTICS_CSV,
     ROAD_NETWORK_FIGURE,
     DEGREE_DISTRIBUTION_FIGURE,
-    CENTRALITY_STATISTICS_CSV,
-    EDGE_LENGTH_DISTRIBUTION_FIGURE,
-    CENTRALITY_FIGURE,
-    LARGEST_COMPONENT_FIGURE,
+    # CENTRALITY_STATISTICS_CSV,
+    # EDGE_LENGTH_DISTRIBUTION_FIGURE,
+    # CENTRALITY_FIGURE,
+    # LARGEST_COMPONENT_FIGURE,
 )
 
-
+# Constructor
 class GraphAnalyzer:
     """
     Performs graph analytics on the processed road network.
@@ -65,14 +70,14 @@ class GraphAnalyzer:
     def __init__(
         self,
         graph_file: Path = GRAPH_FILE,
-        force_recompute=False,
+        force_recompute: bool =False,
     ) -> None:
 
         self.graph_file = Path(graph_file)
 
         self.force_recompute = force_recompute
 
-        self.graph = None
+        self.graph: RoadGraph | None = None
 
         self.nodes = None
 
@@ -80,15 +85,17 @@ class GraphAnalyzer:
 
         self.summary: Dict[str, Any] = {}
 
-        self.node_statistics = None
+        self.node_statistics: DataFrame | None = None
 
-        self.edge_statistics = None
+        self.edge_statistics: DataFrame | None  = None
 
-          # ==========================================================
+        self.centrality_statistics: DataFrame | None = None
+
+     # ==========================================================
     # Load Graph
     # ==========================================================
 
-    def load_graph(self) -> nx.MultiDiGraph:
+    def load_graph(self) -> RoadGraph:
         """
         Load the processed road network.
 
@@ -101,7 +108,7 @@ class GraphAnalyzer:
         print("LOADING ROAD NETWORK")
         print("=" * 70)
 
-        if not self.graph_file.exists():
+        if not self.graph_file.exists():    
 
             raise FileNotFoundError(
                 f"Graph file not found:\n{self.graph_file}"
@@ -135,6 +142,10 @@ class GraphAnalyzer:
 
         G = self.graph
 
+        if G is None:
+            raise RuntimeError(
+                "Road network has not been loaded"
+            )
         # undirected = G.to_undirected()
         undirected = nx.Graph(G.to_undirected())
 
@@ -227,8 +238,16 @@ class GraphAnalyzer:
         print("ANALYZING NODES")
         print("=" * 70)
 
+        G = self.graph
+
+        if G is None:
+            raise RuntimeError(
+                "Road network has not been loaded."
+            )
+        
         nodes, _ = ox.graph_to_gdfs(
-            self.graph,
+            # self.graph,
+            G,
             nodes=True,
             edges=True,
         )
@@ -236,17 +255,20 @@ class GraphAnalyzer:
         nodes = nodes.copy()
 
         nodes["degree"] = [
-            self.graph.degree(node)
+            # self.graph.degree(node)
+            G.degree(node)
             for node in nodes.index
         ]
 
         nodes["in_degree"] = [
-            self.graph.in_degree(node)
+            # self.graph.in_degree(node)
+            G.in_degree(node)
             for node in nodes.index
         ]
 
         nodes["out_degree"] = [
-            self.graph.out_degree(node)
+            # self.graph.out_degree(node)
+            G.out_degree(node)
             for node in nodes.index
         ]
 
@@ -274,8 +296,16 @@ class GraphAnalyzer:
         print("ANALYZING EDGES")
         print("=" * 70)
 
-        _, edges = ox.graph_to_gdfs(
-            self.graph,
+        G = self.graph
+
+        if G is None:
+            raise RuntimeError(
+                "Road network has not been loaded."
+            )
+        
+        __, edges = ox.graph_to_gdfs(
+            # self.graph,
+            G,
             nodes=True,
             edges=True,
         )
@@ -345,24 +375,32 @@ class GraphAnalyzer:
             raise RuntimeError(
                 "Run analyze_nodes() first."
             )
+        
+        # if self.graph is None:
+        #     raise RuntimeError(
+        #         "Road network has not been loaded."
+        #     )
+        
+        # G = self.graph.to_undirected()
+        G = self.graph
 
-        G = self.graph.to_undirected()
+        if G is None:
+            raise RuntimeError(
+                "Road network has not been loaded."
+            )
+
+        UG = G.to_undirected()
 
         print("Computing Degree Centrality...")
-        degree = nx.degree_centrality(G)
+        degree = nx.degree_centrality(UG)
 
         print("Computing Closeness Centrality...")
-        closeness = nx.closeness_centrality(G)
+        closeness = nx.closeness_centrality(UG)
 
         print("Computing Betweenness Centrality...")
         betweenness = nx.betweenness_centrality(
-            G,
+            UG,
             normalized=True,    
-            # for production use case enable k and seed 42
-            # This samples 500 source nodes, 
-            # dramatically reducing computation time while providing a good
-            # approximation for large road networks.
-            
             k=500,
             seed=42,
         )
@@ -398,6 +436,10 @@ class GraphAnalyzer:
         print("=" * 70)
 
         G = self.graph
+        if G is None:
+            raise RuntimeError(
+                "Road network has not been loaded."
+            )
 
         weak_components = list(
             nx.weakly_connected_components(G)
@@ -455,23 +497,52 @@ class GraphAnalyzer:
         print("SHORTEST PATH ANALYSIS")
         print("=" * 70)
 
-        G = self.graph.to_undirected()
+        G = self.graph
 
-        if not nx.is_connected(G):
+        if G is None:
+            raise RuntimeError(
+                "Road network has not been loaded."
+            )
+        # UG = G.to_undirected()
+
+        # if not nx.is_connected(UG):
+
+        #     largest = max(
+        #         nx.connected_components(UG),
+        #         key=len,
+        #     )
+
+        #     UG = UG.subgraph(largest).copy()
+
+        # average_path = nx.average_shortest_path_length(
+        #     UG,
+        #     weight="length",
+        # )
+
+        # diameter = nx.diameter(UG)
+        undirected_graph = G.to_undirected()
+
+        if not nx.is_connected(undirected_graph):
 
             largest = max(
-                nx.connected_components(G),
+                nx.connected_components(undirected_graph),
                 key=len,
             )
 
-            G = G.subgraph(largest).copy()
+            undirected_graph = (
+                undirected_graph
+                .subgraph(largest)
+                .copy()
+            )
 
         average_path = nx.average_shortest_path_length(
-            G,
+            undirected_graph,
             weight="length",
         )
 
-        diameter = nx.diameter(G)
+        diameter = nx.diameter(
+            undirected_graph
+        )
 
         self.summary["average_shortest_path"] = (
             average_path
@@ -530,7 +601,7 @@ class GraphAnalyzer:
         print("EXPORTING NODE STATISTICS")
         print("=" * 70)
 
-        self.node_statistics.to_csv(
+        self.node_statistics.to_csv( # type: ignore
             # NODE_STATS_FILE,
             NODE_STATISTICS_CSV,
             index=True,
@@ -549,6 +620,10 @@ class GraphAnalyzer:
         print("EXPORTING EDGE STATISTICS")
         print("=" * 70)
 
+        if self.edge_statistics is None:
+            raise RuntimeError(
+                "Run analyze_edges() first."
+            )
         self.edge_statistics.to_csv(
             # EDGE_STATS_FILE,
             EDGE_STATISTICS_CSV,
@@ -566,14 +641,17 @@ class GraphAnalyzer:
         print("CREATING VISUALIZATIONS")
         print("=" * 70)
 
-        import matplotlib.pyplot as plt
+
 
         # ----------------------------
         # Degree histogram
         # ----------------------------
 
         plt.figure(figsize=(8,5))
-
+        if self.node_statistics is None:
+            raise RuntimeError(
+                "Run analyze_nodes() first."
+            )
         self.node_statistics["degree"].hist(
             bins=30,
         )
@@ -595,9 +673,15 @@ class GraphAnalyzer:
         # ----------------------------
         # Road network
         # ----------------------------
-
-        fig, ax = ox.plot_graph(
-            self.graph,
+        
+        if self.graph is None:
+            raise RuntimeError(
+                "Road network has not been loaded."
+            )
+        graph = self.graph
+        
+        fig, _ = ox.plot_graph(
+            graph,
             node_size=0,
             edge_color="black",
             edge_linewidth=0.4,
