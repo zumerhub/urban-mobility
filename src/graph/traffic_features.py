@@ -45,7 +45,7 @@ from pathlib import Path
 # import pandas as pd
 import osmnx as ox
 from typing import Any
-import geopandas as gpd
+# import geopandas as gpd
 
 from src.types import (
     RoadGraph,
@@ -120,7 +120,8 @@ class TrafficFeatureGenerator:
         graph = self.graph
 
         _, edges = ox.graph_to_gdfs(
-            self.graph
+            # self.graph
+            graph
         )
 
 
@@ -228,6 +229,10 @@ class TrafficFeatureGenerator:
         print("CALCULATING FREE FLOW TRAVEL TIME")
         print("=" * 70)
 
+        if self.edge_features is None:
+            raise RuntimeError(
+                "Run extract_edges() first."
+            )
 
 
         self.edge_features[
@@ -257,7 +262,7 @@ class TrafficFeatureGenerator:
     # Create final feature dataset
     # ------------------------------------------------------------------
 
-    def create_features(self):
+    def create_features(self) -> DataFrame:
 
         print("=" * 70)
         print("CREATING TRAFFIC FEATURES")
@@ -277,7 +282,10 @@ class TrafficFeatureGenerator:
 
         ]
 
-
+        if self.edge_features is None:
+                raise RuntimeError(
+                    "Run extract_edges() first."
+                )
         self.edge_features = (
             self.edge_features[columns]
         )
@@ -296,7 +304,7 @@ class TrafficFeatureGenerator:
     # Export
     # ------------------------------------------------------------------
 
-    def export_features(self):
+    def export_features(self) -> None:
 
         print("=" * 70)
         print("EXPORTING FEATURES")
@@ -310,6 +318,10 @@ class TrafficFeatureGenerator:
             "traffic_features.csv"
         )
 
+        if self.edge_features is None:
+            raise RuntimeError(
+                "Run create_features() first."
+            )
 
         self.edge_features.to_csv(
             output_file,
@@ -327,7 +339,7 @@ class TrafficFeatureGenerator:
     # Pipeline
     # ------------------------------------------------------------------
 
-    def run(self):
+    def run(self) -> DataFrame:
 
 
         self.load_graph()
@@ -352,13 +364,13 @@ class TrafficFeatureGenerator:
             "Traffic feature generation completed."
         )
 
-
+        assert self.edge_features is not None
         return self.edge_features
 
 
 
 
-def main():
+def main() -> None:
 
 
     generator = TrafficFeatureGenerator()

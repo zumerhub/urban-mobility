@@ -1,12 +1,24 @@
+"""
+Project-wide constants.
+
+These values are fixed across the Urban Mobility project.
+"""
+
+from __future__ import annotations
+
+
 from pathlib import Path
-import sys
+# import sys
 
 # ------------------------------------------------------------------
 # Project Paths
 # ------------------------------------------------------------------
+PROJECT_NAME = "Urban Mobility"
+
+PROJECT_VERSION = "1.0.0"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.append(str(PROJECT_ROOT))
+# sys.path.append(str(PROJECT_ROOT))
 
 DATA_DIR = PROJECT_ROOT / "data"
 
@@ -101,3 +113,5 @@ EDGE_LENGTH_DISTRIBUTION_FIGURE = FIGURE_DIR / "edge_length_distribution.png"
 CENTRALITY_FIGURE = FIGURE_DIR / "centrality_distribution.png"
 
 LARGEST_COMPONENT_FIGURE = FIGURE_DIR / "largest_connected_component.png"
+
+

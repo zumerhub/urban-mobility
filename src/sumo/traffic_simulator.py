@@ -1,21 +1,21 @@
 """
-Generate vehicle routes for SUMO.
+Run SUMO traffic simulation.
 """
 
 from __future__ import annotations
 
 
-class RouteGenerator:
+class TrafficSimulator:
 
     def __init__(self) -> None:
         pass
 
-    def generate_routes(self) -> None:
+    def simulate(self) -> None:
         pass
 
     def run(self) -> None:
-        self.generate_routes()
+        self.simulate()
 
 
 if __name__ == "__main__":
-    RouteGenerator().run()
+    TrafficSimulator().run()

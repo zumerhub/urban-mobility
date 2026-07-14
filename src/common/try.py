@@ -1,4 +1,5 @@
 import osmnx as ox
+# import networkx as nx
 
 G = ox.graph_from_place(
     "Ikeja, Lagos, Nigeria",
@@ -7,15 +8,4 @@ G = ox.graph_from_place(
 )
 
 print(type(G))
-
-
-import networkx as nx
-
-help(nx.MultiDiGraph)
-def save(
-    self,
-    graph: nx.MultiDiGraph,
-):
-    
-def download(self) -> nx.MultiDiGraph:
-    
+# print(isinstance(G, nx.MultiDiGraph))
