@@ -17,7 +17,7 @@ Author:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import networkx as nx
 import geopandas as gpd
@@ -28,7 +28,10 @@ import pandas as pd
 # Graph Types
 # ==========================================================================
 
-RoadGraph: TypeAlias = nx.MultiDiGraph[Any]
+if TYPE_CHECKING:
+    RoadGraph: TypeAlias = nx.MultiDiGraph[Any]
+else:
+    RoadGraph: TypeAlias = nx.MultiDiGraph
 
 
 # ==========================================================================

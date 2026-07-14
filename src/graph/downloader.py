@@ -85,32 +85,7 @@ class RoadNetworkDownloader:
     # Save graph
     # ------------------------------------------------------------------
 
-    # def save(self, graph):
-    #     """
-    #     Save graph as GraphML.
-    #     """
-
-    #     print("=" * 70)
-    #     print("SAVING GRAPH")
-    #     print("=" * 70)
-
-    #     self.output_file.parent.mkdir(
-    #         parents=True,
-    #         exist_ok=True,
-    #     )
-
-    #     ox.save_graphml(
-    #         graph,
-    #         filepath=self.output_file,
-    #     )
-
-    #     print(f"Saved to:\n{self.output_file}")
-    #     print()
-
-    def save(
-        self,
-        graph: RoadGraph,
-    ) -> None:
+    def save_graph(self, graph: RoadGraph) -> None:
         """
         Save graph as GraphML.
         """
@@ -130,6 +105,28 @@ class RoadNetworkDownloader:
         )
 
         print(f"Saved to:\n{self.output_file}\n")
+
+    # ------------------------------------------------------------------
+    # Save graph_xml
+    # ------------------------------------------------------------------
+
+    def save_graph_xml(self, graph: RoadGraph) -> None:
+     
+        """
+            Placeholder.
+
+            OSMnx cannot export a MultiDiGraph back to an
+            OSM XML file suitable for SUMO.
+
+            The XML file will be generated during the
+            SUMO network building stage.
+        """
+
+        raise NotImplementedError(
+            "GraphML -> OSM XML export is not supported by OSMnx."
+        )
+
+
     # ------------------------------------------------------------------
     # Execute complete download pipeline
     # ------------------------------------------------------------------
@@ -145,9 +142,16 @@ class RoadNetworkDownloader:
 
         graph = self.download()
 
-        self.save(graph)
+        self.save_graph(graph)
+        # self.save_graph_xml(graph)
 
         return graph
+
+    
+  
+
+        
+
 
 
 def main():
