@@ -65,27 +65,18 @@ EDGE_CSV = PROCESSED_DATA_DIR / "edges.csv"
 
 ROAD_NETWORK_IMAGE = FIGURE_DIR / "ikeja_road_network.png"
 
+# ------------------------------------------------------------------
+# Raw OSM Data
+# ------------------------------------------------------------------
+
+# RAW_DATA_DIR = DATA_DIR / "raw"
+RAW_OSM_FILE = RAW_DATA_DIR / "nigeria-260713.osm.pbf"
+
+
 
 # ------------------------------------------------------------------
 # Reports
 # ------------------------------------------------------------------
-
-# REPORT_DIR = OUTPUT_DIR / "reports"
-
-# REPORT_DIR.mkdir(
-#     parents=True,
-#     exist_ok=True,
-# )
-
-# GRAPH_SUMMARY_JSON = REPORT_DIR / "graph_summary.json"
-
-# NODE_STATISTICS_CSV = REPORT_DIR / "node_statistics.csv"
-
-# EDGE_STATISTICS_CSV = REPORT_DIR / "edge_statistics.csv"
-
-# GRAPH_SUMMARY_CSV = REPORT_DIR / "graph_summary.csv"
-
-# CENTRALITY_STATISTICS_CSV = REPORT_DIR / "centrality_statistics.csv"
 
 REPORT_DIR = OUTPUT_DIR / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -114,4 +105,113 @@ CENTRALITY_FIGURE = FIGURE_DIR / "centrality_distribution.png"
 
 LARGEST_COMPONENT_FIGURE = FIGURE_DIR / "largest_connected_component.png"
 
+
+# ------------------------------------------------------------------
+# SUMO
+# ------------------------------------------------------------------
+
+SUMO_DIR = DATA_DIR / "sumo"
+
+SUMO_DIR.mkdir(parents=True, exist_ok=True,)
+
+# ----------------- Networks -----------------------------------------
+
+
+SUMO_NETWORK_FILE = SUMO_DIR / "ikeja.net.xml"
+
+SUMO_OSM_FILE = SUMO_DIR / "ikeja.osm.xml"
+
+SUMO_CONFIG_FILE = SUMO_DIR / "simulation.sumocfg"
+
+# ------------------------ trip_generator ----------------------------
+
+SUMO_ROUTE_FILE = SUMO_DIR / "routes.rou.xml"
+
+SUMO_TRIP_FILE = SUMO_DIR / "trips.trips.xml"
+
+SUMO_OUTPUT_FILE = SUMO_DIR / "simulation_output.xml"
+
+# ---------------- Random Trips----------------
+RANDOM_TRIPS_PERIOD = 2
+
+SIMULATION_BEGIN = 0
+
+SIMULATION_END = 3600
+
+RANDOM_TRIPS_SEED = 42
+
+# ------------------------------------------------------------------
+# Study Area (Bounding Box) # Format: (minLon, minLat, maxLon, maxLat)
+# ------------------------------------------------------------------
+# BOUNDING_BOX = "3.30, 6.55, 3.40, 6.65"  
+BOUNDING_BOX = (3.30, 6.55, 3.40, 6.65,)
+
+
+
+# ------------------------------------------------------------------
+# Travel Demand Generation
+# ------------------------------------------------------------------
+
+TRAFFIC_FEATURES_CSV = REPORT_DIR / "traffic_features.csv"
+
+TRAVEL_DEMAND_CSV = REPORT_DIR / "travel_demand.csv"
+
+RANDOM_SEED = 42
+
+NUMBER_OF_VEHICLES = 1000
+MORNING_PEAK_START = 7 * 3600
+MORNING_PEAK_END = 9 * 3600
+
+EVENING_PEAK_START = 16 * 3600
+EVENING_PEAK_END = 19 * 3600
+
+# PASSENGER_RATIO = 0.60 # danfo/korope 
+# DELIVERY_RATIO = 0.20
+# TRUCK_RATIO = 0.10
+# BUS_RATIO = 0.10
+
+
+# Okada, Delivery Van, Korope, Keke Napep, Truck, Car, BRT, Danfo, Molue 
+
+# Car              40%
+# Danfo            18%
+# Korope           10%
+# Okada            10%
+# Keke              7%
+# Delivery Van      6%
+# Truck             4%
+# BRT               3%
+# Police            1%
+# Ambulance         0.5%
+# Fire Truck        0.5%
+# ------------------------
+# Total           100%
+
+# ================================================================
+# Vehicle Fleet Distribution (Ikeja, Lagos)
+# ================================================================
+
+CAR_RATIO = 0.38            # Private passenger cars
+
+DANFO_RATIO = 0.18          # Commercial minibuses
+
+KOROPE_RATIO = 0.10         # Mini commercial buses
+
+BRT_RATIO = 0.03            # Bus Rapid Transit
+
+MOLUE_RATIO = 0.02          # Long commercial buses
+
+KEKE_RATIO = 0.07           # Tricycles
+
+OKADA_RATIO = 0.10          # Motorcycle taxis
+
+DELIVERY_VAN_RATIO = 0.06     # Delivery vans
+
+TRUCK_RATIO = 0.04          # Heavy goods vehicles
+
+POLICE_RATIO = 0.01         # Police patrol vehicles
+
+AMBULANCE_RATIO = 0.005     # Emergency medical service
+
+FIRE_TRUCK_RATIO = 0.005    # Fire service
 
