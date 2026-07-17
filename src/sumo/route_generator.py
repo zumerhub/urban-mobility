@@ -16,35 +16,92 @@ RouteGenerator
 
 
 
+from pathlib import Path
+
+from src.utils.logger import get_logger
 from config import(
     TRAVEL_DEMAND_CSV,
-    SUMO_NETWORK_FILE
+    SUMO_NETWORK_FILE,
+    SUMO_TRIP_FILE,
+    SUMO_ROUTE_FILE,
+    SUMO_CONFIG_FILE,
+    SUMO_OUTPUT_FILE,
 )
 
 
+logger = get_logger(__name__)
 
-
-
-# import subprocess
-# from pathlib import Path
-# from src.utils.logger import get_logger
-
-# logger = get_logger(__name__)
-
-# class NetworkBuilder:
-#     """
-#     Builds a SUMO road network and generates synthetic traffic demand.
-#     """
+class RouteGenerator:
+    """
+    Builds a SUMO route network and generates synthetic traffic demand.
+    """
     
-#     BOUNDING_BOX = "3.30, 6.55, 3.40, 6.65" 
+    BOUNDING_BOX = "3.30, 6.55, 3.40, 6.65" 
     
-#     def __init__(self, pbf_path: str = "data/raw/nigeria-260713.osm.pbf") -> None:
-#         self.pbf_path = Path(pbf_path)
+    def __init__(self, 
+                 travel_demand_csv: Path = TRAVEL_DEMAND_CSV, 
+                 net_file: Path = SUMO_NETWORK_FILE 
+                 ) -> None:
+        
+        self.travel_demand_csv = travel_demand_csv
+        
+        
+        # Network files
+        self.net_file = net_file
+        
+        # Demand files
+        self.trip_file = SUMO_TRIP_FILE 
+        self.route_file = SUMO_ROUTE_FILE 
+        
+        # Config and Output
+        self.config_file = SUMO_CONFIG_FILE 
+        self.output_file = SUMO_OUTPUT_FILE 
+        
+        logger.info(f"Initialized Route Network Generator. Pipeline ready.")
+
+
+    def verify_input_file(self,) -> bool:
+        """Verify file files exists."""
+
+        valid = True
+        if self.travel_demand_csv.exists():
+            logger.info(f"Source file not found: {self.travel_demand_csv}")
+            return False
+        
+        if self.net_file.exists():
+            logger.info(f"SUMO network file not found: {self.net_file}")
+            return False
+        return valid
+
+
+    def run(self) -> None:
+        """Run the full pipeline."""
+        if not self.verify_input_file():
+            return
+
+        logger.info("Network routes generator and configuration complete.")
+
+if __name__ == "__main__":
+    builder = RouteGenerator()
+    builder.run()  # Uncomment to execute
+
+
+
+
+
+
+
+
+
+
+
+
+# # 
 #         self.sumo_dir = Path("data/sumo")
 #         self.sumo_dir.mkdir(parents=True, exist_ok=True)
         
 #         # Network files
-#         self.net_file = self.sumo_dir / "ikeja.net.xml"
+#         self.net_file = net_file
         
 #         # Demand files
 #         self.trip_file = self.sumo_dir / "trips.xml"
@@ -111,9 +168,6 @@ from config import(
 # if __name__ == "__main__":
 #     builder = NetworkBuilder()
 #     builder.run()  # Uncomment to execute
-
-
-
 
 # python3 randomTrips.py \
 #     -n ikeja.net.xml \
