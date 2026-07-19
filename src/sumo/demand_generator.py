@@ -78,7 +78,8 @@ from __future__ import annotations
 
 import pandas as pd
 import numpy as np
-from src.types import DataFrame
+
+from src.types import DataFrame, pd
 
 from config import (
     NODE_STATISTICS_CSV,

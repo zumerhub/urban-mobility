@@ -6,19 +6,22 @@ RouteGenerator
 
 ├── verify_inputs()  
 ├── load_travel_demand()     # travel_demand.csv
+├── load_network()
 ├── map_nodes_to_edges()
 ├── build_trip_file()
 ├── generate_routes()
 ├── verify_routes()
 ├── create_sumo_config()
+├── run()
 
 """
 
 
-
+from __future__ import annotations
 from pathlib import Path
 
 from src.utils.logger import get_logger
+from src.types import DataFrame, pd
 from config import(
     TRAVEL_DEMAND_CSV,
     SUMO_NETWORK_FILE,
@@ -45,7 +48,6 @@ class RouteGenerator:
         
         self.travel_demand_csv = travel_demand_csv
         
-        
         # Network files
         self.net_file = net_file
         
@@ -57,35 +59,57 @@ class RouteGenerator:
         self.config_file = SUMO_CONFIG_FILE 
         self.output_file = SUMO_OUTPUT_FILE 
         
-        logger.info(f"Initialized Route Network Generator. Pipeline ready.")
+        logger.info(f"Initialized RouteGenerator...")
 
 
     def verify_input_file(self,) -> bool:
         """Verify file files exists."""
 
         valid = True
-        if self.travel_demand_csv.exists():
+        if not self.travel_demand_csv.exists():
             logger.info(f"Source file not found: {self.travel_demand_csv}")
             return False
         
-        if self.net_file.exists():
+        if not self.net_file.exists():
             logger.info(f"SUMO network file not found: {self.net_file}")
             return False
         return valid
 
+    def load_travel_demand(self) -> DataFrame:
+        """Load travel demand CSV into a Pandas DataFrame."""
+
+        logger.info("=" * 70)
+        logger.info("LOADING TRAVEL DEMAND...")
+        logger.info("=" * 70)
+        
+        self.travel_demand = pd.read_csv(self.travel_demand_csv)
+        
+        logger.info(f"Loaded {len(self.travel_demand):,} trips.")
+        
+        return self.travel_demand
 
     def run(self) -> None:
         """Run the full pipeline."""
         if not self.verify_input_file():
             return
+        self.load_travel_demand()
 
         logger.info("Network routes generator and configuration complete.")
 
-if __name__ == "__main__":
+def main() -> None:
     builder = RouteGenerator()
     builder.run()  # Uncomment to execute
 
+if __name__ == "__main__":
+    main()  
 
+
+    # if __name__ == "__main__":
+    #     builder = RouteGenerator()
+    #     builder.run()  # Uncomment to execute
+
+
+#  python3 -m src.sumo.route_generator
 
 
 
