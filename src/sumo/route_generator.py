@@ -18,10 +18,15 @@ RouteGenerator
 
 
 from __future__ import annotations
+
 from pathlib import Path
 
-from src.utils.logger import get_logger
+import sumolib  # type: ignore
+
 from src.types import DataFrame, pd
+
+from src.utils.logger import get_logger
+from src.types import DataFrame, pd, EdgeCandidateList
 from config import(
     TRAVEL_DEMAND_CSV,
     SUMO_NETWORK_FILE,
@@ -29,6 +34,8 @@ from config import(
     SUMO_ROUTE_FILE,
     SUMO_CONFIG_FILE,
     SUMO_OUTPUT_FILE,
+    EDGE_STATISTICS_CSV,
+    NODE_STATISTICS_CSV
 )
 
 
@@ -43,13 +50,17 @@ class RouteGenerator:
     
     def __init__(self, 
                  travel_demand_csv: Path = TRAVEL_DEMAND_CSV, 
-                 net_file: Path = SUMO_NETWORK_FILE 
+                 net_file: Path = SUMO_NETWORK_FILE,
+
                  ) -> None:
         
         self.travel_demand_csv = travel_demand_csv
         
         # Network files
         self.net_file = net_file
+
+        self.edge_statistics_csv = EDGE_STATISTICS_CSV
+        self.node_statistics_csv = NODE_STATISTICS_CSV
         
         # Demand files
         self.trip_file = SUMO_TRIP_FILE 
@@ -58,11 +69,13 @@ class RouteGenerator:
         # Config and Output
         self.config_file = SUMO_CONFIG_FILE 
         self.output_file = SUMO_OUTPUT_FILE 
+        self.EDGE_SEARCH_RADIUS = 100
+        
         
         logger.info(f"Initialized RouteGenerator...")
 
 
-    def verify_input_file(self,) -> bool:
+    def verify_input_file(self) -> bool:
         """Verify file files exists."""
 
         valid = True
@@ -87,14 +100,165 @@ class RouteGenerator:
         logger.info(f"Loaded {len(self.travel_demand):,} trips.")
         
         return self.travel_demand
+    
+
+    def load_node_statistics(self) -> DataFrame:
+        """Load node statistics."""
+
+        logger.info("=" * 70)
+        logger.info("LOADING NODE STATISTICS")
+        logger.info("=" * 70)
+
+        self.node_statistics = pd.read_csv(
+            self.node_statistics_csv
+        )
+
+        logger.info(
+            f"Loaded {len(self.node_statistics):,} nodes."
+        )
+
+        return self.node_statistics
+    
+
+    
+    def load_network(self) -> None:
+        """Verify the SUMO network is available."""
+
+        logger.info("=" * 70)
+        logger.info("LOADING SUMO NETWORK ...")
+        logger.info("=" * 70)
+        
+        self.network = sumolib.net.readNet(str(self.net_file))
+
+        logger.info(f"Network loaded successfully.")
+        logger.info(f"Network file: {self.net_file}")
+        
+
+    
+    def map_nodes_to_edges(self) -> DataFrame:
+        """
+        Map each origin and destination OSM node
+        to the closest valid SUMO edge.
+        """
+
+        logger.info("=" * 70)
+        logger.info("MAPPING NODES TO EDGES")
+        logger.info("=" * 70)
+
+        # TODO:
+        # Read origin_node and destination_node from self.travel_demand
+        node_lookup = (
+            self.node_statistics
+            .set_index("osmid")[["x", "y"]]
+            .to_dict("index")
+        )
+        # Find the corresponding SUMO edges (add the lists)
+        origin_edges = []
+        destination_edges = []
+
+
+        for _, trip in self.travel_demand.iterrows():
+
+            origin_node = trip["origin_node"]
+            destination_node = trip["destination_node"]
+            
+            # Store them in self.origin_edges and self.destination_edges
+            origin = node_lookup[origin_node]
+            destination = node_lookup[destination_node]
+
+            # contain longitude and latitude.
+            origin = node_lookup[origin_node]
+            destination = node_lookup[destination_node]
+
+            logger.info(
+                f"Origin node {origin_node}: "
+                f"x={origin['x']}, y={origin['y']}"
+            )
+            # Find nearby SUMO edges
+            origin_candidates: EdgeCandidateList = (
+                self.network.getNeighboringEdges(
+                origin["x"],
+                origin["y"],
+                self.EDGE_SEARCH_RADIUS #100.0,
+
+            ))
+            logger.info(len(origin_candidates))
+
+            destination_candidates: EdgeCandidateList = (self.network.getNeighboringEdges(
+                destination["x"],
+                destination["y"],
+                self.EDGE_SEARCH_RADIUS #100.0,
+            ))
+            
+
+            logger.info(
+               f"Mapped {len(origin_edges):,} / {len(self.travel_demand):,} trips."
+            )
+            # Skip trips if no nearby edge exists
+            if not origin_candidates:
+                logger.warning(
+                    f"No SUMO edge found for origin node {origin_node}"
+                )
+                continue
+
+            if not destination_candidates:
+                logger.warning(
+                    f"No SUMO edge found for destination node {destination_node}"
+                )
+                continue
+
+    
+            closest_origin = min(origin_candidates, key=lambda item: item[1])
+            origin_edge = closest_origin[0]
+
+            logger.info(closest_origin[1])
+
+            closest_destination = min(destination_candidates, key=lambda item: item[1])
+            destination_edge = closest_destination[0]
+
+            # Save edge IDs
+            origin_edges.append(origin_edge.getID())
+            destination_edges.append(destination_edge.getID())
+
+        # Store results
+        # self.origin_edges = origin_edges
+        # self.destination_edges = destination_edges
+
+        # Add edge IDs to travel demand
+        self.travel_demand["origin_edge"] = origin_edges
+        self.travel_demand["destination_edge"] = destination_edges
+
+        logger.info(
+            f"Mapped {len(self.travel_demand):,} trips to SUMO edges."
+        )
+
+        logger.info("First 5 mapped trips:")
+
+        logger.info(
+            self.travel_demand[
+                [
+                    "origin_node",
+                    "origin_edge",
+                    "destination_node",
+                    "destination_edge",
+                ]
+            ].head()
+        )
+    
+        return self.travel_demand
 
     def run(self) -> None:
-        """Run the full pipeline."""
         if not self.verify_input_file():
             return
-        self.load_travel_demand()
 
-        logger.info("Network routes generator and configuration complete.")
+        self.load_travel_demand()
+        self.load_node_statistics()
+        self.load_network()
+        self.map_nodes_to_edges()
+
+        logger.info("=" * 70)
+        logger.info("ROUTE GENERATOR INITIALIZATION COMPLETE")
+        logger.info("=" * 70)
 
 def main() -> None:
     builder = RouteGenerator()

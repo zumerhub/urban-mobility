@@ -74,3 +74,7 @@ JsonList: TypeAlias = list[dict[str, Any]]
 NodeId: TypeAlias = int
 
 EdgeId: TypeAlias = tuple[int, int, int]
+
+
+EdgeCandidate: TypeAlias = tuple[Any, float]
+EdgeCandidateList: TypeAlias = list[EdgeCandidate]
