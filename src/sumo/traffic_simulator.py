@@ -101,6 +101,7 @@ from __future__ import annotations
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 from config import (
     SUMO_CONFIG_FILE,
@@ -135,7 +136,8 @@ class TrafficSimulator:
         sumocfg_file: Path = SUMO_CONFIG_FILE,
         output_dir: Path | None = None,
         begin: float = 0,
-        end: float = 86400,
+        end: float | None = None,
+        completion_buffer: float = 3600,
         use_gui: bool = False,
     ) -> None:
         """
@@ -161,9 +163,13 @@ class TrafficSimulator:
             the network file's directory.
 
         begin, end:
-            Simulation time window in seconds. Must cover the full
-            departure range in route_file, or any vehicle departing
-            after `end` simply never enters the simulation.
+            Simulation time window in seconds. `end` defaults to the
+            latest routed departure plus `completion_buffer`.
+
+        completion_buffer:
+            Seconds added after the latest departure when `end` is not
+            provided. This keeps the run long enough for current trips
+            to complete without unnecessarily simulating a full day.
 
         use_gui:
             Run sumo-gui instead of sumo.
@@ -175,6 +181,7 @@ class TrafficSimulator:
         self.output_dir = output_dir or self.net_file.parent
         self.begin = begin
         self.end = end
+        self.completion_buffer = completion_buffer
         self.use_gui = use_gui
 
         self.tripinfo_file = self.output_dir / "tripinfo.xml"
@@ -184,6 +191,12 @@ class TrafficSimulator:
 
         self.command: list[str] | None = None
         self.result: subprocess.CompletedProcess[str] | None = None
+        self.expected_vehicle_count: int | None = None
+        self.departure_min: float | None = None
+        self.departure_max: float | None = None
+        self.completed_tripinfo_count: int | None = None
+        self.final_arrived_count: int | None = None
+        self.unfinished_vehicle_count: int | None = None
 
         logger.info("Initialized TrafficSimulator...")
 
@@ -210,7 +223,7 @@ class TrafficSimulator:
     # ==================================================================
 
     def verify_routes(self) -> bool:
-        """Verify the SUMO route file exists."""
+        """Verify the SUMO route file exists and contains vehicles."""
 
         logger.info("=" * 70)
         logger.info("VERIFYING ROUTES")
@@ -220,8 +233,87 @@ class TrafficSimulator:
             logger.error("SUMO route file not found: %s", self.route_file)
             return False
 
+        try:
+            root = ET.parse(self.route_file).getroot()
+        except ET.ParseError as exc:
+            logger.error("Invalid XML in route file: %s", exc)
+            return False
+
+        vehicles = root.findall(".//vehicle")
+        expected_count = len(vehicles)
+
+        if expected_count == 0:
+            logger.error("No <vehicle> elements found in route file.")
+            return False
+
+        departures: list[float] = []
+        for vehicle in vehicles:
+            depart = vehicle.get("depart")
+            if depart is None:
+                logger.error(
+                    "Vehicle %s is missing a depart attribute.",
+                    vehicle.get("id", "<unknown>"),
+                )
+                return False
+            try:
+                departures.append(float(depart))
+            except ValueError:
+                logger.error(
+                    "Vehicle %s has invalid depart value: %s",
+                    vehicle.get("id", "<unknown>"),
+                    depart,
+                )
+                return False
+
+        self.expected_vehicle_count = expected_count
+        self.departure_min = min(departures)
+        self.departure_max = max(departures)
+
+        if self.end is None:
+            self.end = self.departure_max + self.completion_buffer
+            logger.info(
+                "Simulation end set from route demand: %.2f seconds",
+                self.end,
+            )
+
+        if self.end <= self.departure_max:
+            logger.error(
+                "Simulation end time %.2f does not cover latest "
+                "departure %.2f.",
+                self.end,
+                self.departure_max,
+            )
+            return False
+
         logger.info("✓ SUMO routes: %s", self.route_file)
+        logger.info("Expected routed vehicles: %d", expected_count)
+        logger.info(
+            "Route departure range: %.2f - %.2f seconds",
+            self.departure_min,
+            self.departure_max,
+        )
         return True
+
+    # ==================================================================
+    # CLEAR OUTPUTS
+    # ==================================================================
+
+    def clear_existing_outputs(self) -> None:
+        """Remove declared output files so stale XML cannot pass validation."""
+
+        logger.info("=" * 70)
+        logger.info("CLEARING PREVIOUS SIMULATION OUTPUTS")
+        logger.info("=" * 70)
+
+        for path in [
+            self.tripinfo_file,
+            self.summary_file,
+            self.edgedata_file,
+            self.queue_file,
+        ]:
+            if path.exists():
+                path.unlink()
+                logger.info("Removed stale output: %s", path)
 
     # ==================================================================
     # BUILD SIMULATION COMMAND
@@ -252,6 +344,12 @@ class TrafficSimulator:
             command += ["--net-file", str(self.net_file)]
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.end is None:
+            raise RuntimeError(
+                "Simulation end time has not been set. "
+                "Run verify_routes() before build_simulation_command()."
+            )
 
         command += [
             "--route-files", str(self.route_file),
@@ -355,14 +453,25 @@ class TrafficSimulator:
     # VERIFY OUTPUTS
     # ==================================================================
 
+    @staticmethod
+    def _latest_summary_step(summary_file: Path) -> dict[str, Any] | None:
+        """Return the final <step> attributes from summary.xml."""
+
+        root = ET.parse(summary_file).getroot()
+        steps = root.findall(".//step")
+
+        if not steps:
+            return None
+
+        return dict(steps[-1].attrib)
+
     def verify_outputs(self) -> bool:
         """
-        Verify tripinfo.xml is well-formed and contains at least one
-        completed trip.
+        Verify tripinfo.xml and summary.xml match the current route file.
 
-        tripinfo.xml is treated as the required minimum for downstream
-        analysis (per-vehicle travel time/delay); summary/edgeData/
-        queue are best-effort and only logged via collect_outputs().
+        The successful case requires one completed <tripinfo> record per
+        routed vehicle. summary.xml is also checked when available to
+        report SUMO's final arrived count.
         """
 
         logger.info("=" * 70)
@@ -375,6 +484,14 @@ class TrafficSimulator:
             )
             return False
 
+        if not self.summary_file.exists():
+            logger.error("summary.xml was not created: %s", self.summary_file)
+            return False
+
+        if self.expected_vehicle_count is None:
+            logger.error("Expected vehicle count has not been computed.")
+            return False
+
         try:
             tree = ET.parse(self.tripinfo_file)
         except ET.ParseError as exc:
@@ -383,11 +500,68 @@ class TrafficSimulator:
 
         trip_infos = tree.getroot().findall(".//tripinfo")
 
-        if not trip_infos:
-            logger.error("No <tripinfo> elements found.")
+        completed_count = len(trip_infos)
+        self.completed_tripinfo_count = completed_count
+
+        try:
+            final_step = self._latest_summary_step(self.summary_file)
+        except ET.ParseError as exc:
+            logger.error("Invalid XML in summary.xml: %s", exc)
             return False
 
-        logger.info("Completed trips: %d", len(trip_infos))
+        if final_step is None:
+            logger.error("No <step> elements found in summary.xml.")
+            return False
+
+        final_arrived: int | None = None
+        if "arrived" in final_step:
+            final_arrived = int(float(final_step["arrived"]))
+
+        self.final_arrived_count = final_arrived
+
+        unfinished_from_tripinfo = self.expected_vehicle_count - completed_count
+        unfinished_from_summary = (
+            self.expected_vehicle_count - final_arrived
+            if final_arrived is not None
+            else unfinished_from_tripinfo
+        )
+        self.unfinished_vehicle_count = max(
+            unfinished_from_tripinfo,
+            unfinished_from_summary,
+        )
+
+        logger.info("Expected routed vehicles: %d", self.expected_vehicle_count)
+        logger.info("Completed tripinfo records: %d", completed_count)
+
+        if final_arrived is not None:
+            logger.info("Final SUMO arrived count: %d", final_arrived)
+        else:
+            logger.warning("Final SUMO arrived count unavailable.")
+
+        logger.info(
+            "Unfinished/failed vehicles: %d",
+            self.unfinished_vehicle_count,
+        )
+
+        if completed_count != self.expected_vehicle_count:
+            logger.error(
+                "Completed tripinfo count mismatch: expected %d, got %d.",
+                self.expected_vehicle_count,
+                completed_count,
+            )
+            return False
+
+        if (
+            final_arrived is not None
+            and final_arrived != self.expected_vehicle_count
+        ):
+            logger.error(
+                "Final arrived count mismatch: expected %d, got %d.",
+                self.expected_vehicle_count,
+                final_arrived,
+            )
+            return False
+
         logger.info("=" * 70)
         logger.info("SIMULATION OUTPUT VERIFICATION PASSED")
         logger.info("=" * 70)
@@ -411,6 +585,7 @@ class TrafficSimulator:
         if not self.verify_routes():
             raise FileNotFoundError("SUMO route verification failed.")
 
+        self.clear_existing_outputs()
         self.build_simulation_command()
         self.run_simulation()
         self.collect_outputs()

@@ -108,7 +108,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from config import SUMO_NETWORK_FILE, TRAVEL_DEMAND_CSV
+from config import SUMO_NETWORK_FILE, SUMO_ROUTE_FILE, TRAVEL_DEMAND_CSV
 
 from src.types import DataFrame, pd
 from src.utils.logger import get_logger
@@ -136,6 +136,9 @@ class SimulationAnalyzer:
         self,
         tripinfo_file: Path | None = None,
         summary_file: Path | None = None,
+        edge_file: Path | None = None,
+        queue_file: Path | None = None,
+        route_file: Path | None = None,
         report_dir: Path | None = None,
         scenario_name: str = "baseline",
     ) -> None:
@@ -168,20 +171,48 @@ class SimulationAnalyzer:
         self.summary_file = summary_file or (
             default_sim_dir / "summary.xml"
         )
+        self.edge_file = edge_file or (default_sim_dir / "edgeData.xml")
+        self.queue_file = queue_file or (default_sim_dir / "queue.xml")
+        self.route_file = route_file or SUMO_ROUTE_FILE
         self.report_dir = report_dir or TRAVEL_DEMAND_CSV.parent
         self.scenario_name = scenario_name
 
         self.report_csv = self.report_dir / "simulation_report.csv"
         self.report_json = self.report_dir / "simulation_report.json"
+        self.summary_json = self.report_dir / "simulation_summary.json"
+        self.trip_metrics_csv = (
+            self.report_dir / "simulation_trip_metrics.csv"
+        )
+        self.vehicle_type_metrics_csv = (
+            self.report_dir / "simulation_vehicle_type_metrics.csv"
+        )
+        self.edge_metrics_csv = (
+            self.report_dir / "simulation_edge_metrics.csv"
+        )
+        self.queue_metrics_csv = (
+            self.report_dir / "simulation_queue_metrics.csv"
+        )
         self.travel_time_plot = (
             self.report_dir / "travel_time_distribution.png"
         )
         self.delay_plot = self.report_dir / "delay_distribution.png"
+        self.waiting_time_plot = (
+            self.report_dir / "waiting_time_distribution.png"
+        )
+        self.vehicle_type_duration_plot = (
+            self.report_dir / "duration_by_vehicle_type.png"
+        )
 
         self.tripinfo: DataFrame | None = None
         self.summary: DataFrame | None = None
+        self.edge_metrics: DataFrame | None = None
+        self.queue_metrics: DataFrame | None = None
+        self.trip_metrics: DataFrame | None = None
+        self.vehicle_type_metrics: DataFrame | None = None
         self.metrics: dict[str, Any] = {}
         self.comparison: DataFrame | None = None
+        self.expected_vehicle_count: int | None = None
+        self.route_vehicle_ids: set[str] = set()
 
         logger.info("Initialized SimulationAnalyzer...")
 
@@ -215,6 +246,7 @@ class SimulationAnalyzer:
             "depart",
             "departDelay",
             "departSpeed",
+            "arrivalSpeed",
             "arrival",
             "duration",
             "routeLength",
@@ -237,6 +269,42 @@ class SimulationAnalyzer:
         logger.info("Loaded %d tripinfo records.", len(trips))
 
         return trips
+
+    # ==================================================================
+    # LOAD ROUTE VEHICLE IDS
+    # ==================================================================
+
+    def load_route_vehicle_ids(self) -> set[str]:
+        """Load current SUMO route vehicle ids for count validation."""
+
+        if not self.route_file.exists():
+            raise FileNotFoundError(f"Route file not found: {self.route_file}")
+
+        root = ET.parse(self.route_file).getroot()
+        route_vehicle_ids = {
+            str(el.attrib["id"])
+            for el in root.findall(".//vehicle")
+            if "id" in el.attrib
+        }
+
+        if not route_vehicle_ids:
+            raise ValueError("No <vehicle> elements found in route file.")
+
+        if len(route_vehicle_ids) != len(
+            [el for el in root.findall(".//vehicle") if "id" in el.attrib]
+        ):
+            raise ValueError("Duplicate vehicle ids found in route file.")
+
+        self.route_vehicle_ids = route_vehicle_ids
+        self.expected_vehicle_count = len(route_vehicle_ids)
+
+        logger.info(
+            "Loaded %d expected vehicles from %s.",
+            self.expected_vehicle_count,
+            self.route_file,
+        )
+
+        return route_vehicle_ids
 
     # ==================================================================
     # LOAD SUMMARY
@@ -274,11 +342,170 @@ class SimulationAnalyzer:
         return summary
 
     # ==================================================================
+    # LOAD EDGE DATA
+    # ==================================================================
+
+    def load_edge_metrics(self) -> DataFrame:
+        """Load useful per-edge metrics from SUMO edgeData.xml."""
+
+        logger.info("=" * 70)
+        logger.info("LOADING EDGE DATA")
+        logger.info("=" * 70)
+
+        if not self.edge_file.exists():
+            raise FileNotFoundError(f"edgeData.xml not found: {self.edge_file}")
+
+        records: list[dict[str, Any]] = []
+        interval_begin: float | None = None
+        interval_end: float | None = None
+
+        for event, el in ET.iterparse(
+            self.edge_file, events=("start", "end")
+        ):
+            if event == "start" and el.tag == "interval":
+                interval_begin = float(el.attrib["begin"])
+                interval_end = float(el.attrib["end"])
+            elif event == "end" and el.tag == "edge":
+                records.append(dict(el.attrib))
+                el.clear()
+
+        if not records:
+            raise ValueError("No <edge> elements found in edgeData.xml.")
+
+        edges = pd.DataFrame(records)
+        numeric_columns = [
+            "sampledSeconds",
+            "traveltime",
+            "density",
+            "laneDensity",
+            "occupancy",
+            "waitingTime",
+            "timeLoss",
+            "speed",
+            "speedRelative",
+            "departed",
+            "arrived",
+            "entered",
+            "left",
+            "flow",
+        ]
+
+        for column in numeric_columns:
+            if column in edges.columns:
+                edges[column] = pd.to_numeric(edges[column], errors="coerce")
+
+        useful_columns = [
+            column
+            for column in [
+                "id",
+                "sampledSeconds",
+                "traveltime",
+                "speed",
+                "density",
+                "occupancy",
+                "waitingTime",
+                "timeLoss",
+                "entered",
+                "left",
+                "arrived",
+                "departed",
+                "flow",
+            ]
+            if column in edges.columns
+        ]
+        edges = edges[useful_columns].copy()
+
+        edges["interval_begin_s"] = interval_begin
+        edges["interval_end_s"] = interval_end
+
+        self.edge_metrics = edges
+
+        logger.info("Loaded %d edge records.", len(edges))
+
+        return edges
+
+    # ==================================================================
+    # LOAD QUEUE DATA
+    # ==================================================================
+
+    def load_queue_metrics(self) -> DataFrame:
+        """Aggregate queue.xml to useful per-lane queue metrics."""
+
+        logger.info("=" * 70)
+        logger.info("LOADING QUEUE DATA")
+        logger.info("=" * 70)
+
+        if not self.queue_file.exists():
+            raise FileNotFoundError(f"queue.xml not found: {self.queue_file}")
+
+        rows: list[dict[str, Any]] = []
+
+        for _, el in ET.iterparse(self.queue_file, events=("end",)):
+            if el.tag == "lane":
+                rows.append(dict(el.attrib))
+            el.clear()
+
+        if not rows:
+            self.queue_metrics = pd.DataFrame(
+                columns=[
+                    "lane_id",
+                    "observations",
+                    "mean_queueing_time_s",
+                    "max_queueing_time_s",
+                    "mean_queueing_length_m",
+                    "max_queueing_length_m",
+                    "mean_queueing_length_experimental_m",
+                    "max_queueing_length_experimental_m",
+                ]
+            )
+            logger.warning("No lane queue records found in queue.xml.")
+            return self.queue_metrics
+
+        queues = pd.DataFrame(rows).rename(columns={"id": "lane_id"})
+        numeric_columns = [
+            "queueing_time",
+            "queueing_length",
+            "queueing_length_experimental",
+        ]
+
+        for column in numeric_columns:
+            queues[column] = pd.to_numeric(queues[column], errors="coerce")
+
+        grouped = (
+            queues.groupby("lane_id", as_index=False)
+            .agg(
+                observations=("queueing_time", "size"),
+                mean_queueing_time_s=("queueing_time", "mean"),
+                max_queueing_time_s=("queueing_time", "max"),
+                mean_queueing_length_m=("queueing_length", "mean"),
+                max_queueing_length_m=("queueing_length", "max"),
+                mean_queueing_length_experimental_m=(
+                    "queueing_length_experimental",
+                    "mean",
+                ),
+                max_queueing_length_experimental_m=(
+                    "queueing_length_experimental",
+                    "max",
+                ),
+            )
+            .sort_values(
+                ["max_queueing_length_m", "max_queueing_time_s"],
+                ascending=[False, False],
+            )
+        )
+
+        self.queue_metrics = grouped
+
+        logger.info("Loaded queue metrics for %d lanes.", len(grouped))
+
+        return grouped
+
+    # ==================================================================
     # COMPUTE METRICS
     # ==================================================================
 
     def compute_metrics(self) -> dict[str, Any]:
-        """Compute headline performance metrics for this scenario."""
+        """Compute validated research metrics for this scenario."""
 
         if self.tripinfo is None:
             raise RuntimeError("Tripinfo has not been loaded.")
@@ -287,37 +514,159 @@ class SimulationAnalyzer:
         logger.info("COMPUTING METRICS")
         logger.info("=" * 70)
 
-        trips = self.tripinfo
+        trips = self.tripinfo.copy()
+
+        required_numeric = [
+            "duration",
+            "waitingTime",
+            "timeLoss",
+            "routeLength",
+        ]
+        missing = [
+            column for column in required_numeric if column not in trips.columns
+        ]
+        if missing:
+            raise ValueError(f"Missing required tripinfo columns: {missing}")
+
+        invalid_numeric = [
+            column
+            for column in required_numeric
+            if trips[column].isna().any()
+        ]
+        if invalid_numeric:
+            raise ValueError(
+                "Required numeric tripinfo fields contain unparseable "
+                f"values: {invalid_numeric}"
+            )
+
+        if "id" not in trips.columns:
+            raise ValueError("tripinfo.xml is missing vehicle id attributes.")
+
+        duplicate_vehicle_ids = trips["id"][trips["id"].duplicated()].tolist()
+        if duplicate_vehicle_ids:
+            raise ValueError(
+                "Duplicate vehicle ids found in tripinfo.xml: "
+                f"{duplicate_vehicle_ids[:10]}"
+            )
+
+        if self.expected_vehicle_count is not None:
+            completed = len(trips)
+            if completed != self.expected_vehicle_count:
+                raise ValueError(
+                    "Tripinfo count does not match current route file: "
+                    f"expected {self.expected_vehicle_count}, got {completed}."
+                )
+
+        if self.route_vehicle_ids:
+            trip_vehicle_ids = set(trips["id"].astype(str))
+            missing_from_tripinfo = self.route_vehicle_ids - trip_vehicle_ids
+            extra_in_tripinfo = trip_vehicle_ids - self.route_vehicle_ids
+            if missing_from_tripinfo or extra_in_tripinfo:
+                raise ValueError(
+                    "Tripinfo vehicle ids do not match route file. "
+                    f"Missing={len(missing_from_tripinfo)}, "
+                    f"extra={len(extra_in_tripinfo)}."
+                )
+
+        valid_speed = trips["duration"] > 0
+        trips["derived_speed_mps"] = None
+        trips.loc[valid_speed, "derived_speed_mps"] = (
+            trips.loc[valid_speed, "routeLength"]
+            / trips.loc[valid_speed, "duration"]
+        )
+        trips["derived_speed_mps"] = pd.to_numeric(
+            trips["derived_speed_mps"], errors="coerce"
+        )
+
+        self.trip_metrics = self._build_trip_metrics(trips)
+        self.vehicle_type_metrics = self._build_vehicle_type_metrics(trips)
 
         metrics: dict[str, Any] = {
             "scenario": self.scenario_name,
             "completed_trips": int(len(trips)),
-            "avg_duration_s": float(trips["duration"].mean()),
+            "expected_vehicles_from_routes": self.expected_vehicle_count,
+            "mean_duration_s": float(trips["duration"].mean()),
             "median_duration_s": float(trips["duration"].median()),
+            "min_duration_s": float(trips["duration"].min()),
+            "max_duration_s": float(trips["duration"].max()),
+            "std_duration_s": float(trips["duration"].std()),
+            "mean_waiting_time_s": float(trips["waitingTime"].mean()),
+            "mean_time_loss_s": float(trips["timeLoss"].mean()),
+            "mean_route_length_m": float(trips["routeLength"].mean()),
+            "mean_derived_speed_mps": float(
+                trips["derived_speed_mps"].mean()
+            ),
+            "mean_derived_speed_kmh": float(
+                trips["derived_speed_mps"].mean() * 3.6
+            ),
+            "avg_duration_s": float(trips["duration"].mean()),
             "avg_time_loss_s": float(trips["timeLoss"].mean()),
             "avg_waiting_time_s": float(trips["waitingTime"].mean()),
             "avg_route_length_m": float(trips["routeLength"].mean()),
-            "avg_depart_delay_s": float(trips["departDelay"].mean()),
-            "max_duration_s": float(trips["duration"].max()),
             "max_time_loss_s": float(trips["timeLoss"].max()),
         }
 
+        if "departDelay" in trips.columns:
+            metrics["avg_depart_delay_s"] = float(trips["departDelay"].mean())
+
         if self.summary is not None and not self.summary.empty:
+            final_summary = self.summary.iloc[-1]
+            metrics["final_summary_step_s"] = float(final_summary["time"])
+
+            for source, target in [
+                ("loaded", "final_loaded"),
+                ("inserted", "final_inserted"),
+                ("arrived", "final_arrived"),
+                ("running", "final_running"),
+                ("waiting", "final_waiting"),
+                ("collisions", "final_collisions"),
+                ("teleports", "final_teleports"),
+                ("ended", "final_ended"),
+                ("discarded", "final_discarded"),
+            ]:
+                if source in self.summary.columns:
+                    metrics[target] = int(final_summary[source])
+
             if "running" in self.summary.columns:
                 metrics["peak_concurrent_vehicles"] = int(
                     self.summary["running"].max()
                 )
-            if "arrived" in self.summary.columns:
-                metrics["total_arrived"] = int(
-                    self.summary["arrived"].iloc[-1]
-                )
-            if "collisions" in self.summary.columns:
+                metrics["total_arrived"] = int(final_summary.get("arrived", 0))
                 metrics["total_collisions"] = int(
-                    self.summary["collisions"].iloc[-1]
+                    final_summary.get("collisions", 0)
                 )
-            if "teleports" in self.summary.columns:
                 metrics["total_teleports"] = int(
-                    self.summary["teleports"].iloc[-1]
+                    final_summary.get("teleports", 0)
+                )
+
+        if self.edge_metrics is not None and not self.edge_metrics.empty:
+            active_edges = self.edge_metrics[
+                self.edge_metrics.get("sampledSeconds", 0) > 0
+            ]
+            metrics["edge_records"] = int(len(self.edge_metrics))
+            metrics["active_edge_records"] = int(len(active_edges))
+            for column, target in [
+                ("traveltime", "mean_edge_travel_time_s"),
+                ("speed", "mean_edge_speed_mps"),
+                ("density", "mean_edge_density"),
+                ("occupancy", "mean_edge_occupancy"),
+                ("waitingTime", "mean_edge_waiting_time_s"),
+                ("timeLoss", "mean_edge_time_loss_s"),
+            ]:
+                if column in active_edges.columns and not active_edges.empty:
+                    metrics[target] = float(active_edges[column].mean())
+
+        if self.queue_metrics is not None:
+            metrics["queue_lane_records"] = int(len(self.queue_metrics))
+            if not self.queue_metrics.empty:
+                metrics["max_queueing_length_m"] = float(
+                    self.queue_metrics["max_queueing_length_m"].max()
+                )
+                metrics["max_queueing_time_s"] = float(
+                    self.queue_metrics["max_queueing_time_s"].max()
+                )
+                metrics["mean_lane_queueing_length_m"] = float(
+                    self.queue_metrics["mean_queueing_length_m"].mean()
                 )
 
         self.metrics = metrics
@@ -327,6 +676,70 @@ class SimulationAnalyzer:
             logger.info("  %s: %s", key, value)
 
         return metrics
+
+    def _build_trip_metrics(self, trips: DataFrame) -> DataFrame:
+        """Create per-vehicle rows for ETA and downstream modelling."""
+
+        columns = [
+            column
+            for column in [
+                "id",
+                "vType",
+                "depart",
+                "departDelay",
+                "arrival",
+                "duration",
+                "routeLength",
+                "waitingTime",
+                "waitingCount",
+                "timeLoss",
+                "departLane",
+                "arrivalLane",
+                "departSpeed",
+                "arrivalSpeed",
+                "speedFactor",
+                "derived_speed_mps",
+            ]
+            if column in trips.columns
+        ]
+        trip_metrics = trips[columns].copy()
+        trip_metrics = trip_metrics.rename(
+            columns={
+                "id": "vehicle_id",
+                "vType": "vehicle_type",
+                "depart": "depart_s",
+                "departDelay": "depart_delay_s",
+                "arrival": "arrival_s",
+                "duration": "duration_s",
+                "routeLength": "route_length_m",
+                "waitingTime": "waiting_time_s",
+                "waitingCount": "waiting_count",
+                "timeLoss": "time_loss_s",
+                "departSpeed": "depart_speed_mps",
+                "arrivalSpeed": "arrival_speed_mps",
+            }
+        )
+        return trip_metrics.sort_values("depart_s").reset_index(drop=True)
+
+    def _build_vehicle_type_metrics(self, trips: DataFrame) -> DataFrame:
+        """Compute per-vehicle-type statistics when SUMO vType exists."""
+
+        if "vType" not in trips.columns:
+            return pd.DataFrame()
+
+        return (
+            trips.groupby("vType", as_index=False)
+            .agg(
+                vehicle_count=("id", "count"),
+                mean_duration_s=("duration", "mean"),
+                median_duration_s=("duration", "median"),
+                mean_waiting_time_s=("waitingTime", "mean"),
+                mean_time_loss_s=("timeLoss", "mean"),
+                mean_route_length_m=("routeLength", "mean"),
+            )
+            .rename(columns={"vType": "vehicle_type"})
+            .sort_values("vehicle_type")
+        )
 
     # ==================================================================
     # COMPARE SCENARIOS
@@ -379,7 +792,7 @@ class SimulationAnalyzer:
     # ==================================================================
 
     def create_visualizations(self) -> list[Path]:
-        """Save travel-time and delay distribution histograms."""
+        """Save compact research-useful simulation plots."""
 
         if self.tripinfo is None:
             raise RuntimeError("Tripinfo has not been loaded.")
@@ -424,14 +837,51 @@ class SimulationAnalyzer:
         created.append(self.delay_plot)
         logger.info("Saved: %s", self.delay_plot)
 
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.hist(
+            self.tripinfo["waitingTime"],
+            bins=30,
+            color="#10b981",
+            edgecolor="white",
+        )
+        ax.set_xlabel("Waiting time (s)")
+        ax.set_ylabel("Number of trips")
+        ax.set_title(f"Waiting Time Distribution — {self.scenario_name}")
+        fig.tight_layout()
+        fig.savefig(self.waiting_time_plot, dpi=150)
+        plt.close(fig)
+        created.append(self.waiting_time_plot)
+        logger.info("Saved: %s", self.waiting_time_plot)
+
+        if "vType" in self.tripinfo.columns:
+            fig, ax = plt.subplots(figsize=(9, 5))
+            self.tripinfo.boxplot(
+                column="duration",
+                by="vType",
+                ax=ax,
+                grid=False,
+                rot=30,
+            )
+            ax.set_xlabel("Vehicle type")
+            ax.set_ylabel("Travel duration (s)")
+            ax.set_title(
+                f"Travel Duration by Vehicle Type — {self.scenario_name}"
+            )
+            fig.suptitle("")
+            fig.tight_layout()
+            fig.savefig(self.vehicle_type_duration_plot, dpi=150)
+            plt.close(fig)
+            created.append(self.vehicle_type_duration_plot)
+            logger.info("Saved: %s", self.vehicle_type_duration_plot)
+
         return created
 
     # ==================================================================
     # EXPORT REPORT
     # ==================================================================
 
-    def export_report(self) -> tuple[Path, Path]:
-        """Write the metrics table to CSV and JSON."""
+    def export_report(self) -> list[Path]:
+        """Write reproducible metrics and modelling-ready artifacts."""
 
         if not self.metrics:
             raise RuntimeError("Metrics have not been computed.")
@@ -448,7 +898,10 @@ class SimulationAnalyzer:
             else pd.DataFrame([self.metrics]).set_index("scenario")
         )
 
+        written: list[Path] = []
+
         report_table.to_csv(self.report_csv)
+        written.append(self.report_csv)
         logger.info("CSV report written: %s", self.report_csv)
 
         report_data = (
@@ -459,10 +912,81 @@ class SimulationAnalyzer:
 
         with open(self.report_json, "w", encoding="utf-8") as f:
             json.dump(report_data, f, indent=2, default=str)
+        written.append(self.report_json)
 
         logger.info("JSON report written: %s", self.report_json)
 
-        return self.report_csv, self.report_json
+        summary = {
+            "scenario": self.scenario_name,
+            "source_files": self._source_file_metadata(),
+            "metrics": self.metrics,
+            "vehicle_type_metrics": (
+                []
+                if self.vehicle_type_metrics is None
+                else self.vehicle_type_metrics.to_dict(orient="records")
+            ),
+            "validation": {
+                "expected_vehicles_from_routes": self.expected_vehicle_count,
+                "tripinfo_records": (
+                    None if self.tripinfo is None else int(len(self.tripinfo))
+                ),
+                "duplicate_trip_vehicle_ids": 0,
+                "fresh_xml_outputs_used": True,
+            },
+        }
+
+        with open(self.summary_json, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, default=str)
+        written.append(self.summary_json)
+        logger.info("Summary JSON written: %s", self.summary_json)
+
+        if self.trip_metrics is not None:
+            self.trip_metrics.to_csv(self.trip_metrics_csv, index=False)
+            written.append(self.trip_metrics_csv)
+            logger.info("Trip metrics written: %s", self.trip_metrics_csv)
+
+        if self.vehicle_type_metrics is not None:
+            self.vehicle_type_metrics.to_csv(
+                self.vehicle_type_metrics_csv, index=False
+            )
+            written.append(self.vehicle_type_metrics_csv)
+            logger.info(
+                "Vehicle-type metrics written: %s",
+                self.vehicle_type_metrics_csv,
+            )
+
+        if self.edge_metrics is not None:
+            self.edge_metrics.to_csv(self.edge_metrics_csv, index=False)
+            written.append(self.edge_metrics_csv)
+            logger.info("Edge metrics written: %s", self.edge_metrics_csv)
+
+        if self.queue_metrics is not None:
+            self.queue_metrics.to_csv(self.queue_metrics_csv, index=False)
+            written.append(self.queue_metrics_csv)
+            logger.info("Queue metrics written: %s", self.queue_metrics_csv)
+
+        return written
+
+    def _source_file_metadata(self) -> dict[str, dict[str, Any]]:
+        """Record source file sizes and mtimes for reproducibility."""
+
+        sources = {
+            "tripinfo": self.tripinfo_file,
+            "summary": self.summary_file,
+            "edgeData": self.edge_file,
+            "queue": self.queue_file,
+            "routes": self.route_file,
+        }
+
+        metadata: dict[str, dict[str, Any]] = {}
+        for name, path in sources.items():
+            stat = path.stat()
+            metadata[name] = {
+                "path": str(path),
+                "size_bytes": stat.st_size,
+                "modified_time_epoch": stat.st_mtime,
+            }
+        return metadata
 
     # ==================================================================
     # VERIFY OUTPUTS
@@ -478,9 +1002,18 @@ class SimulationAnalyzer:
         expected = [
             self.report_csv,
             self.report_json,
+            self.summary_json,
+            self.trip_metrics_csv,
+            self.vehicle_type_metrics_csv,
+            self.edge_metrics_csv,
+            self.queue_metrics_csv,
             self.travel_time_plot,
             self.delay_plot,
+            self.waiting_time_plot,
         ]
+
+        if self.vehicle_type_metrics is not None and not self.vehicle_type_metrics.empty:
+            expected.append(self.vehicle_type_duration_plot)
 
         all_present = True
 
@@ -494,6 +1027,27 @@ class SimulationAnalyzer:
         logger.info("=" * 70)
 
         if all_present:
+            if self.tripinfo is None:
+                raise RuntimeError("Tripinfo was not loaded.")
+            if self.summary is None or self.summary.empty:
+                raise RuntimeError("Summary was not loaded.")
+            if self.expected_vehicle_count is None:
+                raise RuntimeError("Route vehicle count was not loaded.")
+            if len(self.tripinfo) != self.expected_vehicle_count:
+                raise RuntimeError(
+                    "Generated report count mismatch: "
+                    f"{len(self.tripinfo)} trips vs "
+                    f"{self.expected_vehicle_count} route vehicles."
+                )
+            final_arrived = self.metrics.get("final_arrived")
+            if (
+                final_arrived is not None
+                and int(final_arrived) != len(self.tripinfo)
+            ):
+                raise RuntimeError(
+                    "Final summary arrived count does not match tripinfo: "
+                    f"{final_arrived} vs {len(self.tripinfo)}."
+                )
             logger.info("SIMULATION ANALYSIS VERIFICATION PASSED")
         else:
             logger.warning("SIMULATION ANALYSIS VERIFICATION INCOMPLETE")
@@ -511,8 +1065,11 @@ class SimulationAnalyzer:
         logger.info("STARTING SIMULATION ANALYSIS PIPELINE")
         logger.info("=" * 70)
 
+        self.load_route_vehicle_ids()
         self.load_tripinfo()
         self.load_summary()
+        self.load_edge_metrics()
+        self.load_queue_metrics()
         self.compute_metrics()
         self.compare_scenarios()
         self.create_visualizations()
