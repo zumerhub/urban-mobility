@@ -1,5 +1,8 @@
 # urban-mobility (Lagos Traffic Story)
 
+# <!-- To find codebase Tree -->
+find src scripts -type f | sort
+
 ## Motivation
 
 Every city has its own transportation identity.

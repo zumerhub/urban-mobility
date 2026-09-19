@@ -73,6 +73,10 @@ ROAD_NETWORK_IMAGE = FIGURE_DIR / "ikeja_road_network.png"
 RAW_OSM_FILE = RAW_DATA_DIR / "nigeria-260713.osm.pbf"
 
 
+# ------------------------------------------------------------------
+# 
+# ------------------------------------------------------------------
+
 
 # ------------------------------------------------------------------
 # Reports
@@ -90,6 +94,8 @@ NODE_STATISTICS_CSV = REPORT_DIR / "node_statistics.csv"
 EDGE_STATISTICS_CSV = REPORT_DIR / "edge_statistics.csv"
 
 CENTRALITY_STATISTICS_CSV = REPORT_DIR / "centrality_statistics.csv"
+
+FAILED_ROUTE_MAPPINGS_CSV = REPORT_DIR / "failed_route_mappings.csv"
 
 # ------------------------------------------------------------------
 # Figures
@@ -140,11 +146,13 @@ SIMULATION_END = 3600
 
 RANDOM_TRIPS_SEED = 42
 
+EDGE_SEARCH_RADIUS = 150.0 # 500.0 #100.0
+
 # ------------------------------------------------------------------
 # Study Area (Bounding Box) # Format: (minLon, minLat, maxLon, maxLat)
 # ------------------------------------------------------------------
-# BOUNDING_BOX = "3.30, 6.55, 3.40, 6.65"  
-BOUNDING_BOX = (3.30, 6.55, 3.40, 6.65,)
+# BOUNDING_BOX = (3.30, 6.55, 3.40, 6.65,)
+BOUNDING_BOX = (3.31, 6.54, 3.39, 6.67)
 
 
 
@@ -158,7 +166,7 @@ TRAVEL_DEMAND_CSV = REPORT_DIR / "travel_demand.csv"
 
 RANDOM_SEED = 42
 
-NUMBER_OF_VEHICLES = 1000
+NUMBER_OF_VEHICLES = 500 #1000
 MORNING_PEAK_START = 7 * 3600
 MORNING_PEAK_END = 9 * 3600
 
